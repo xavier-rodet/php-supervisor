@@ -1,0 +1,118 @@
+Supervisor-php pseudo code
+
+daemon-script-path example : bin/console supervisor:daemon player_queue steamid gameid
+
+
+Supervisor Database
+======================================================
+id/pid/cmd/daemon-script-path/processor/processor_args/strategy/strategy_args/
+======================================================
+1 / 1 / create / daemon.php / \processor\MyProcessor / [1] / \strategy\MyStrategy / []
+
+// TODO : processor args = service injection : how can we do this ?????? (add Symfony dependencies ....)
+// setBoostrap ?
+// setAutoloader ?
+
+
+
+
+Supervisor Client
+======================================================
+$client->create(daemon-sript-path, new Processor(), new Strategy())
+$client->update(daemon-sript-path, new AnotherProcessor(), new AnotherStrategy())
+$client->delete(daemon-script-path)
+
+Or wait for the end of the process
+
+$client->update(daemon-sript-path, new AnotherProcessor(), new AnotherStrategy(), Closure $callback)
+// In this client will subscribe and wait for 'daemon-script-path-finished'
+// Should be used for short time call
+======================================================
+
+
+
+
+
+Supervisor Subscriber
+======================================================
+subscribe 'supervisor-client' $message (cmd, daemon-sript-path, Processor, Strategy) => ([create,update,delete], bin/console supervisor:daemon player_queue steamid gameid, Processor, processor_args, Strategy, strategy_args)
+
+Action : [create,update,delete] from db 'supervisor-daemons' item :  'daemon-script', Processor, processor_args, Strategy, strategy_args
+
+
+subscribe ('daemon-finished', deamon-script-path) : delete-db('deamon-script-path') + emit('daemon-script-path-finished', true) ?
+======================================================
+
+
+
+
+
+
+Supervisor Server (Daemon)
+======================================================
+
+forever {
+	
+	$daemons = select * from 'supervisor-daemons';
+
+
+	// TODO : replace by a parallelism treatment
+	foreach($daemons as $daemon) {
+
+		// Spatie\Async\Pool->add()
+		if(cmd = create) {
+
+			$this->startDaemon($daemon); // Wait for start being confirmed ???!!!! (subscribe 'daemon-started')
+			$this->updateDb(cmd, '');
+		}
+		elseif(cmd = update) {
+
+			$this->restartDaemon($daemon); (stop + start)
+			$this->updateDb(cmd, '');
+		}
+		elseif(cmd = delete) {
+
+			$this->stopDaemon($daemon); // Wait for stop being confirmed ???!!!! (subscribe 'daemon-stopped')
+			this->deleteDb(id)
+		}
+		/*
+		elseif(cmd = finished) {
+
+			this->deleteDb(id)
+			//$this->emit('daemon-script-path-finished', true);
+		) 
+		*/
+		elseif(!$this->daemonIsRunning($daemon)) {
+			// Recheck db to besure
+			$this->startDaemon($daemon); // Wait for start being confirmed ???!!!! (subscribe 'daemon-started')
+		}
+
+/*
+		if(!$this->daemonIsRunning($daemon)) { // only check if process name starts with daemon-sript-path
+
+			$this->startDaemon($daemon);
+		}
+		elseif ($this->daemonHasChange($daemon)) { // check if process name is exactly daemon-sript-path + Processor + Strategy
+
+			$this->restartDaemon($daemon); 
+		}
+*/
+
+	}
+
+	// Spatie\Async\Pool->wait()
+
+	//V$this->clearDaemons($daemons); // stop daemons which are not longer needed (HOW ?)
+	// NO NEED ? (daemons are auto-killed after 1 day of lifetime)
+}
+
+======================================================
+
+
+
+Supervisor Daemon
+======================================================
+when started : emit->('daemon-started', deamon-script-path)
+when finished : emit->('daemon-finished', deamon-script-path)
+when stopped :  emit->('daemon-stopped', deamon-script-path)
+======================================================
